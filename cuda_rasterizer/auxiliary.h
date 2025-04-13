@@ -143,14 +143,14 @@ __forceinline__ __device__ float sigmoid(float x)
 	return 1.0f / (1.0f + expf(-x));
 }
 
-__forceinline__ __device__ bool in_frustum(
+// this function for forward.cu (originally called in_frustum)
+__forceinline__ __device__ bool in_frustum2(
 	float3& p_view,
 	float3& p_proj, 
 	float2& p_pix, 
 	const float* patchbbox,
 	bool prefiltered)
 {
-
 	// if ((p_proj.x < -1.3 || p_proj.x > 1.3 || p_proj.y < -1.3 || p_proj.y > 1.3))
 	// 	printf("p_proj out of frustum! %.8f, %.8f, %.8f\n", p_proj.x, p_proj.y, p_proj.z);
 	// float expand = 1.1;
@@ -159,6 +159,34 @@ __forceinline__ __device__ bool in_frustum(
 	float w = x1 - x0, h = y1 - y0;
 	float expand = 0.2;
 	if (p_view.z < 0 || p_pix.x < x0 - w * expand || p_pix.x >= x1 + w * expand || p_pix.y < y0 - h * expand || p_pix.y >= y1 + h * expand)
+	{
+		if (prefiltered)
+		{
+			printf("Point is filtered although prefiltered is set. This shouldn't happen!");
+			__trap();
+		}
+		return false;
+	}
+	return true;
+}
+
+// this function for rasterizer_impl.cu (changed to implementation like original 3DGS rasterizer and 2dgs)
+__forceinline__ __device__ bool in_frustum(int idx,
+	const float* orig_points,
+	const float* viewmatrix,
+	const float* projmatrix,
+	bool prefiltered,
+	float3& p_view)
+{
+	float3 p_orig = { orig_points[3 * idx], orig_points[3 * idx + 1], orig_points[3 * idx + 2] };
+
+	// Bring points to screen space
+	float4 p_hom = transformPoint4x4(p_orig, projmatrix);
+	float p_w = 1.0f / (p_hom.w + 0.0000001f);
+	float3 p_proj = { p_hom.x * p_w, p_hom.y * p_w, p_hom.z * p_w };
+	p_view = transformPoint4x3(p_orig, viewmatrix);
+
+	if (p_view.z <= 0.2f)// || ((p_proj.x < -1.3 || p_proj.x > 1.3 || p_proj.y < -1.3 || p_proj.y > 1.3)))
 	{
 		if (prefiltered)
 		{
